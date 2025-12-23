@@ -5,7 +5,18 @@ const WORLD_MIN_X = -8;
 const WORLD_MAX_X = 8;
 const GRAVITY = 0.18;
 
+const sounds = {
+    ddededodediamante: new Audio('/ddededodediamante.wav'),
+    scream: new Audio('/scream.wav'),
+    music: new Audio('/newfriendly.mp3')
+}
+
+sounds.music.loop = true;
+sounds.music.play();
+sounds.music.volume = 0.7;
+
 const canvas = document.getElementById("game");
+const pauseButton = document.getElementById("pause");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -75,23 +86,23 @@ window.addEventListener("resize", () => {
 });
 
 const moveSpeed = 0.12;
-const jumpForce = 0.35;
+const jumpForce = 0.31;
 
 let velocityY = 0;
 let onGround = false;
 let playing = false;
+let paused = false;
 
 const lavaCubes = [];
 const lavaGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
 const lavaMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
 
 let spawnDelay = 1200;
-const spawnSpeedMultiplier = 0.96;
+let lastSpawnTime = 0;
+const spawnSpeedMultiplier = 0.985;
 const minSpawnDelay = 150;
 
 function spawnLava() {
-    if (!playing) return;
-
     const lava = new THREE.Mesh(lavaGeometry, lavaMaterial);
     lava.position.set(
         WORLD_MIN_X + Math.random() * (WORLD_MAX_X - WORLD_MIN_X),
@@ -103,7 +114,6 @@ function spawnLava() {
     lavaCubes.push(lava);
 
     spawnDelay = Math.max(minSpawnDelay, spawnDelay * spawnSpeedMultiplier);
-    setTimeout(spawnLava, spawnDelay);
 }
 
 function lavaCollision(lava) {
@@ -112,8 +122,10 @@ function lavaCollision(lava) {
     return dx < 0.7 && dy < 1.3;
 }
 
-function loop() {
-    if (playing) {
+function loop(time) {
+    if (assetsLoaded) renderer.render(scene, camera);
+
+    if (playing && !paused) {
         if (keys["a"] || keys["arrowleft"]) player.position.x -= moveSpeed;
         if (keys["d"] || keys["arrowright"]) player.position.x += moveSpeed;
 
@@ -129,6 +141,11 @@ function loop() {
             player.position.y = 1.3;
             velocityY = 0;
             onGround = true;
+        }
+
+        if (time - lastSpawnTime >= spawnDelay) {
+            spawnLava();
+            lastSpawnTime = time;
         }
 
         for (let i = lavaCubes.length - 1; i >= 0; i--) {
@@ -154,10 +171,6 @@ function loop() {
         camera.position.x = player.position.x / 2;
     }
 
-    if (assetsLoaded) {
-        renderer.render(scene, camera);
-    }
-
     requestAnimationFrame(loop);
 }
 
@@ -165,25 +178,12 @@ loop();
 
 function gameOver() {
     playing = false;
-    dialogGameover.style.display = "flex";
+    setPaused(false);
+
+    updatePauseButton();
+    gameoverDialog.show();
+    sounds.scream.play();
 }
-
-const dialogStart = document.querySelector("dialog#start");
-dialogStart.style.display = "flex";
-dialogStart.querySelector("button").addEventListener("click", () => {
-    dialogStart.style.display = "none";
-    startGame();
-});
-
-const dialogGameover = document.querySelector("dialog#gameover");
-dialogGameover.querySelector("button#restart").addEventListener("click", () => {
-    dialogGameover.style.display = "none";
-    startGame();
-});
-dialogGameover.querySelector("button#menu").addEventListener("click", () => {
-    dialogGameover.style.display = "none";
-    dialogStart.style.display = "flex";
-});
 
 function resetGame() {
     lavaCubes.forEach(l => scene.remove(l));
@@ -192,10 +192,102 @@ function resetGame() {
     player.position.set(0, 1.3, 0);
     velocityY = 0;
     spawnDelay = 1200;
+
+    camera.position.set(0, 5, 10);
 }
 
 function startGame() {
     playing = true;
+    setPaused(false);
+
     resetGame();
-    spawnLava();
+    lastSpawnTime = performance.now();
+
+    sounds.ddededodediamante.play();
+    updatePauseButton();
 }
+
+let wasPaused = false;
+window.addEventListener("blur", () => {
+    if (playing) {
+        wasPaused = paused;
+        setPaused(true);
+        updatePauseButton();
+    }
+});
+
+window.addEventListener("focus", () => {
+    if (playing) {
+        setPaused(wasPaused);
+        updatePauseButton();
+    }
+});
+
+let pauseStartTime = 0;
+function setPaused(value) {
+    if (paused === value) return;
+
+    paused = value;
+
+    if (paused) {
+        pauseStartTime = performance.now();
+    } else {
+        const pausedDuration = performance.now() - pauseStartTime;
+        lastSpawnTime += pausedDuration;
+    }
+
+    updatePauseButton();
+}
+
+function updatePauseButton() {
+    pauseButton.style.display = playing ? "block" : "none";
+    pauseButton.innerHTML = `<img src="/${paused ? "resume" : "pause"}.svg">`;
+}
+
+pauseButton.addEventListener("click", () => {
+    if (!playing) return;
+    setPaused(!paused);
+    updatePauseButton();
+});
+
+function createDialog(id, { show = false, buttons = {} } = {}) {
+    const dialog = document.querySelector(`dialog#${id}`);
+
+    if (show) dialog.style.display = "flex";
+
+    for (const selector in buttons) {
+        const btn = dialog.querySelector(selector);
+        if (!btn) continue;
+        btn.addEventListener("click", buttons[selector]);
+    }
+
+    return {
+        show() { dialog.style.display = "flex"; },
+        hide() { dialog.style.display = "none"; },
+        element: dialog
+    };
+}
+
+const startDialog = createDialog("start", {
+    show: true,
+    buttons: {
+        "button": () => {
+            startDialog.hide();
+            startGame();
+        }
+    }
+});
+
+const gameoverDialog = createDialog("gameover", {
+    buttons: {
+        "button#restart": () => {
+            gameoverDialog.hide();
+            startGame();
+        },
+        "button#menu": () => {
+            gameoverDialog.hide();
+            startDialog.show();
+        }
+    }
+});
+
