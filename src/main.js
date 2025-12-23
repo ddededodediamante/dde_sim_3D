@@ -9,11 +9,31 @@ const sounds = {
     ddededodediamante: new Audio('/ddededodediamante.wav'),
     scream: new Audio('/scream.wav'),
     music: new Audio('/newfriendly.mp3')
+};
+
+let settings = {
+    cameraSmoothness: 0.1
+};
+
+function loadSettings() {
+    const saved = JSON.parse(localStorage.getItem("settings"));
+    if (!saved) return;
+
+    settings = Object.assign({}, settings, saved);
+}
+loadSettings();
+
+function saveSettings() {
+    localStorage.setItem("settings", JSON.stringify(settings));
 }
 
 sounds.music.loop = true;
-sounds.music.play();
-sounds.music.volume = 0.7;
+
+sounds.music.play().catch(() => {
+    document.addEventListener('click', () => {
+        sounds.music.play();
+    }, { once: true });
+});
 
 const canvas = document.getElementById("game");
 const pauseButton = document.getElementById("pause");
@@ -168,7 +188,8 @@ function loop(time) {
             Math.min(WORLD_MAX_X, player.position.x)
         );
 
-        camera.position.x = player.position.x / 2;
+        const targetX = player.position.x / 2;
+        camera.position.x += (targetX - camera.position.x) * (1 - settings.cameraSmoothness);
     }
 
     requestAnimationFrame(loop);
@@ -271,9 +292,13 @@ function createDialog(id, { show = false, buttons = {} } = {}) {
 const startDialog = createDialog("start", {
     show: true,
     buttons: {
-        "button": () => {
+        "button#start": () => {
             startDialog.hide();
             startGame();
+        },
+        "button#settings": () => {
+            startDialog.hide();
+            settingsDialog.show();
         }
     }
 });
@@ -291,3 +316,20 @@ const gameoverDialog = createDialog("gameover", {
     }
 });
 
+const settingsDialog = createDialog("settings", {
+    show: false,
+    buttons: {
+        "button#back": () => {
+            startDialog.show();
+            settingsDialog.hide();
+            saveSettings();
+        }
+    }
+});
+
+const cameraSmoothnessInput = settingsDialog.element.querySelector("#camerasmoothness");
+cameraSmoothnessInput.value = settings.cameraSmoothness;
+cameraSmoothnessInput.addEventListener("input", e => {
+    settings.cameraSmoothness = parseFloat(e.target.value);
+    saveSettings();
+});
