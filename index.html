@@ -1,22 +1,32 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>dde Sim 3D</title>
-  </head>
 
-  <body>
-    <dialog id="start">
-      <h2>ddededodediamante Simulator 3D</h2>
-      <button>Start</button>
-    </dialog>
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dde Sim 3D</title>
+</head>
 
-    <div id="app">
-      <canvas id="game"></canvas>
+<body>
+  <dialog id="start">
+    <h2>ddededodediamante Simulator 3D</h2>
+    <button>Start</button>
+  </dialog>
+
+  <dialog id="gameover">
+    <h2>Game Over!</h2>
+    <div class="inline">
+      <button id="restart">Restart</button>
+      <button id="menu">Menu</button>
     </div>
-    
-    <script type="module" src="/src/main.js"></script>
-  </body>
+  </dialog>
+
+  <div id="app">
+    <canvas id="game"></canvas>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
 </html>

@@ -28,12 +28,18 @@ const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
 sunLight.position.set(5, 10, 5);
 scene.add(sunLight);
 
-const loader = new THREE.TextureLoader();
+let assetsLoaded = false;
+const manager = new THREE.LoadingManager(() => {
+    assetsLoaded = true;
+});
+
+const loader = new THREE.TextureLoader(manager);
 
 const floorTexture = loader.load("/grass.png");
 floorTexture.wrapS = THREE.RepeatWrapping;
 floorTexture.wrapT = THREE.RepeatWrapping;
 floorTexture.repeat.set(2, 2);
+
 const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(40, 40),
     new THREE.MeshStandardMaterial({ map: floorTexture, color: 0x59bd37 })
@@ -47,31 +53,18 @@ playerTexture.generateMipmaps = false;
 playerTexture.minFilter = THREE.NearestFilter;
 playerTexture.magFilter = THREE.NearestFilter;
 
-const player = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: playerTexture,
-    transparent: true
-}));
-player.scale.set(1.3, 2.6, 1);
-player.position.set(0, 1, 0);
+const player = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+        map: playerTexture,
+        transparent: true
+    })
+);
 
+player.scale.set(1.3, 2.6, 1);
+player.position.set(0, 1.3, 0);
 scene.add(player);
 
 const keys = {};
-const moveSpeed = 0.12;
-const jumpForce = 0.35;
-
-let velocityY = 0;
-let onGround = false;
-let gameStopped = false;
-
-const lavaCubes = [];
-const lavaGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
-const lavaMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-
-let spawnDelay = 1200;
-const spawnSpeedMultiplier = 0.96;
-const minSpawnDelay = 150;
-
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
@@ -81,8 +74,23 @@ window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
+const moveSpeed = 0.12;
+const jumpForce = 0.35;
+
+let velocityY = 0;
+let onGround = false;
+let playing = false;
+
+const lavaCubes = [];
+const lavaGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
+const lavaMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+
+let spawnDelay = 1200;
+const spawnSpeedMultiplier = 0.96;
+const minSpawnDelay = 150;
+
 function spawnLava() {
-    if (gameStopped) return;
+    if (!playing) return;
 
     const lava = new THREE.Mesh(lavaGeometry, lavaMaterial);
     lava.position.set(
@@ -90,6 +98,7 @@ function spawnLava() {
         20,
         0
     );
+
     scene.add(lava);
     lavaCubes.push(lava);
 
@@ -97,61 +106,96 @@ function spawnLava() {
     setTimeout(spawnLava, spawnDelay);
 }
 
-function animate() {
-    if (gameStopped) return;
-
-    if (keys["a"] || keys["arrowleft"]) player.position.x -= moveSpeed;
-    if (keys["d"] || keys["arrowright"]) player.position.x += moveSpeed;
-
-    if ((keys["w"] || keys[" "] || keys["arrowup"]) && onGround) {
-        velocityY = jumpForce;
-        onGround = false;
-    }
-
-    velocityY -= GRAVITY / 9;
-    player.position.y += velocityY;
-
-    if (player.position.y <= 1.3) {
-        player.position.y = 1.3;
-        velocityY = 0;
-        onGround = true;
-    }
-
-    for (let i = lavaCubes.length - 1; i >= 0; i--) {
-        lavaCubes[i].position.y -= GRAVITY;
-        if (lavaCubes[i].position.y < -5) {
-            scene.remove(lavaCubes[i]);
-            lavaCubes.splice(i, 1);
-        }
-    }
-
-    player.position.z = 0;
-    player.position.x = Math.max(
-        WORLD_MIN_X,
-        Math.min(WORLD_MAX_X, player.position.x)
-    );
-
-    camera.position.x = player.position.x / 2;
-
-    renderer.render(scene, camera);
-
-    requestAnimationFrame(animate);
+function lavaCollision(lava) {
+    const dx = Math.abs(lava.position.x - player.position.x);
+    const dy = Math.abs(lava.position.y - player.position.y);
+    return dx < 0.7 && dy < 1.3;
 }
 
-function start() {
-    spawnLava()
-    animate();
+function loop() {
+    if (playing) {
+        if (keys["a"] || keys["arrowleft"]) player.position.x -= moveSpeed;
+        if (keys["d"] || keys["arrowright"]) player.position.x += moveSpeed;
+
+        if ((keys["w"] || keys[" "] || keys["arrowup"]) && onGround) {
+            velocityY = jumpForce;
+            onGround = false;
+        }
+
+        velocityY -= GRAVITY / 9;
+        player.position.y += velocityY;
+
+        if (player.position.y <= 1.3) {
+            player.position.y = 1.3;
+            velocityY = 0;
+            onGround = true;
+        }
+
+        for (let i = lavaCubes.length - 1; i >= 0; i--) {
+            const lava = lavaCubes[i];
+            lava.position.y -= GRAVITY;
+
+            if (lavaCollision(lava)) {
+                gameOver();
+                break;
+            }
+
+            if (lava.position.y < -5) {
+                scene.remove(lava);
+                lavaCubes.splice(i, 1);
+            }
+        }
+
+        player.position.x = Math.max(
+            WORLD_MIN_X,
+            Math.min(WORLD_MAX_X, player.position.x)
+        );
+
+        camera.position.x = player.position.x / 2;
+    }
+
+    if (assetsLoaded) {
+        renderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(loop);
+}
+
+loop();
+
+function gameOver() {
+    playing = false;
+    dialogGameover.style.display = "flex";
 }
 
 const dialogStart = document.querySelector("dialog#start");
-dialogStart.style.display = "block";
+dialogStart.style.display = "flex";
 dialogStart.querySelector("button").addEventListener("click", () => {
     dialogStart.style.display = "none";
-    start();
+    startGame();
 });
 
 const dialogGameover = document.querySelector("dialog#gameover");
-dialogGameover.querySelector("button").addEventListener("click", () => {
+dialogGameover.querySelector("button#restart").addEventListener("click", () => {
     dialogGameover.style.display = "none";
-    start();
+    startGame();
 });
+dialogGameover.querySelector("button#menu").addEventListener("click", () => {
+    dialogGameover.style.display = "none";
+    dialogStart.style.display = "flex";
+});
+
+function resetGame() {
+    lavaCubes.forEach(l => scene.remove(l));
+    lavaCubes.length = 0;
+
+    player.position.set(0, 1.3, 0);
+    velocityY = 0;
+    spawnDelay = 1200;
+}
+
+function startGame() {
+    playing = true;
+    resetGame();
+    spawnLava();
+}
