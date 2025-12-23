@@ -62,6 +62,7 @@ const jumpForce = 0.35;
 
 let velocityY = 0;
 let onGround = false;
+let gameStopped = false;
 
 const lavaCubes = [];
 const lavaGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
@@ -81,6 +82,8 @@ window.addEventListener("resize", () => {
 });
 
 function spawnLava() {
+    if (gameStopped) return;
+
     const lava = new THREE.Mesh(lavaGeometry, lavaMaterial);
     lava.position.set(
         WORLD_MIN_X + Math.random() * (WORLD_MAX_X - WORLD_MIN_X),
@@ -94,10 +97,8 @@ function spawnLava() {
     setTimeout(spawnLava, spawnDelay);
 }
 
-spawnLava();
-
 function animate() {
-    requestAnimationFrame(animate);
+    if (gameStopped) return;
 
     if (keys["a"] || keys["arrowleft"]) player.position.x -= moveSpeed;
     if (keys["d"] || keys["arrowright"]) player.position.x += moveSpeed;
@@ -133,6 +134,24 @@ function animate() {
     camera.position.x = player.position.x / 2;
 
     renderer.render(scene, camera);
+
+    requestAnimationFrame(animate);
 }
 
-animate();
+function start() {
+    spawnLava()
+    animate();
+}
+
+const dialogStart = document.querySelector("dialog#start");
+dialogStart.style.display = "block";
+dialogStart.querySelector("button").addEventListener("click", () => {
+    dialogStart.style.display = "none";
+    start();
+});
+
+const dialogGameover = document.querySelector("dialog#gameover");
+dialogGameover.querySelector("button").addEventListener("click", () => {
+    dialogGameover.style.display = "none";
+    start();
+});
