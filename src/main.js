@@ -3,52 +3,60 @@ import * as THREE from "three";
 
 const WORLD_MIN_X = -8;
 const WORLD_MAX_X = 8;
-const GRAVITY = 0.18;
+const GRAVITY = 0.17;
+const CAT_CHANCE = 0.1;
+const CAT_BOOST_DURATION = 8000;
+const CAT_BOOST_AMOUNT = 0.2;
 
 const sounds = {
-    ddededodediamante: new Audio('/ddededodediamante.wav'),
-    scream: new Audio('/scream.wav'),
-    music: new Audio('/newfriendly.mp3')
+  ddededodediamante: new Audio("/ddededodediamante.wav"),
+  scream: new Audio("/scream.wav"),
+  cat: new Audio("/cat.wav"),
+  music: new Audio("/newfriendly.mp3"),
 };
 
 let settings = {
-    cameraSmoothness: 0.1,
-    forceMobileControls: false
+  cameraSmoothness: 0.1,
+  forceMobileControls: false,
 };
 
 function loadSettings() {
-    const saved = JSON.parse(localStorage.getItem("settings"));
-    if (!saved) return;
+  const saved = JSON.parse(localStorage.getItem("settings"));
+  if (!saved) return;
 
-    settings = Object.assign({}, settings, saved);
+  settings = Object.assign({}, settings, saved);
 }
 loadSettings();
 
 function saveSettings() {
-    localStorage.setItem("settings", JSON.stringify(settings));
+  localStorage.setItem("settings", JSON.stringify(settings));
 }
 
 sounds.music.loop = true;
 
 sounds.music.play().catch(() => {
-    document.addEventListener('click', () => {
-        sounds.music.play();
-    }, { once: true });
+  document.addEventListener(
+    "click",
+    () => {
+      sounds.music.play();
+    },
+    { once: true }
+  );
 });
 
 const canvas = document.getElementById("game");
-const gui = document.querySelector("div#gui")
+const gui = document.querySelector("div#gui");
 const pauseButton = gui.querySelector("#pause");
-const timer = gui.querySelector("#timer");
+const stats = gui.querySelector("#stats");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 
 const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000
+  75,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
 );
 camera.position.set(0, 5, 10);
 
@@ -64,7 +72,7 @@ scene.add(sunLight);
 
 let assetsLoaded = false;
 const manager = new THREE.LoadingManager(() => {
-    assetsLoaded = true;
+  assetsLoaded = true;
 });
 
 const loader = new THREE.TextureLoader(manager);
@@ -75,8 +83,8 @@ floorTexture.wrapT = THREE.RepeatWrapping;
 floorTexture.repeat.set(2, 2);
 
 const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 40),
-    new THREE.MeshStandardMaterial({ map: floorTexture, color: 0x59bd37 })
+  new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshStandardMaterial({ map: floorTexture, color: 0x59bd37 })
 );
 floor.rotation.x = -Math.PI / 2;
 scene.add(floor);
@@ -88,10 +96,10 @@ playerTexture.minFilter = THREE.NearestFilter;
 playerTexture.magFilter = THREE.NearestFilter;
 
 const player = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-        map: playerTexture,
-        transparent: true
-    })
+  new THREE.SpriteMaterial({
+    map: playerTexture,
+    transparent: true,
+  })
 );
 
 player.scale.set(1.3, 2.6, 1);
@@ -99,17 +107,20 @@ player.position.set(0, 1.3, 0);
 scene.add(player);
 
 const keys = {};
-window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
-window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+window.addEventListener("keydown", (e) => (keys[e.key.toLowerCase()] = true));
+window.addEventListener("keyup", (e) => (keys[e.key.toLowerCase()] = false));
 
 window.addEventListener("resize", () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
 const moveSpeed = 0.12;
 const jumpForce = 0.31;
+
+let catBoosts = [];
+let speedMultiplier = 1;
 
 let velocityY = 0;
 let onGround = false;
@@ -117,260 +128,317 @@ let playing = false;
 let paused = false;
 let gameStartTime = 0;
 let elapsedTime = 0;
+let catsCollected = 0;
 
-const lavaCubes = [];
+const rain = [];
 const lavaGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
 const lavaMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+
+const catTexture = loader.load("/cat.webp");
+const catGeometry = new THREE.BoxGeometry(0.7);
+const catMaterial = new THREE.MeshStandardMaterial({
+  map: catTexture,
+  transparent: true,
+});
 
 let spawnDelay = 1200;
 let lastSpawnTime = 0;
 const spawnSpeedMultiplier = 0.985;
 const minSpawnDelay = 150;
 
-function spawnLava() {
-    const lava = new THREE.Mesh(lavaGeometry, lavaMaterial);
-    lava.position.set(
-        WORLD_MIN_X + Math.random() * (WORLD_MAX_X - WORLD_MIN_X),
-        20,
-        0
+function spawnRain() {
+  const x = WORLD_MIN_X + Math.random() * (WORLD_MAX_X - WORLD_MIN_X);
+
+  if (Math.random() < CAT_CHANCE) {
+    const cat = new THREE.Mesh(catGeometry, catMaterial);
+    cat.position.set(x, 16, 0);
+    cat.rotation.set(
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI * 2
     );
 
-    scene.add(lava);
-    lavaCubes.push(lava);
+    scene.add(cat);
+    rain.push({ type: "cat", mesh: cat });
+  } else {
+    const lava = new THREE.Mesh(lavaGeometry, lavaMaterial);
+    lava.position.set(x, 16, 0);
 
-    spawnDelay = Math.max(minSpawnDelay, spawnDelay * spawnSpeedMultiplier);
+    scene.add(lava);
+    rain.push({ type: "lava", mesh: lava });
+  }
+
+  spawnDelay = Math.max(minSpawnDelay, spawnDelay * spawnSpeedMultiplier);
 }
 
-function lavaCollision(lava) {
-    const dx = Math.abs(lava.position.x - player.position.x);
-    const dy = Math.abs(lava.position.y - player.position.y);
-    return dx < 0.7 && dy < 1.3;
+function collision(mesh) {
+  const dx = Math.abs(mesh.position.x - player.position.x);
+  const dy = Math.abs(mesh.position.y - player.position.y);
+  return dx < 0.7 && dy < 1.3;
 }
 
 function loop(time) {
-    if (assetsLoaded) renderer.render(scene, camera);
+  if (assetsLoaded) renderer.render(scene, camera);
 
-    if (playing && !paused) {
-        if (keys["a"] || keys["arrowleft"]) player.position.x -= moveSpeed;
-        if (keys["d"] || keys["arrowright"]) player.position.x += moveSpeed;
+  if (playing && !paused) {
+    catBoosts = catBoosts.filter((end) => end > time);
+    speedMultiplier = 1 + catBoosts.length * CAT_BOOST_AMOUNT;
 
-        if ((keys["w"] || keys[" "] || keys["arrowup"]) && onGround) {
-            velocityY = jumpForce;
-            onGround = false;
-        }
+    if (keys["a"] || keys["arrowleft"])
+      player.position.x -= moveSpeed * speedMultiplier;
 
-        velocityY -= GRAVITY / 9;
-        player.position.y += velocityY;
+    if (keys["d"] || keys["arrowright"])
+      player.position.x += moveSpeed * speedMultiplier;
 
-        if (player.position.y <= 1.3) {
-            player.position.y = 1.3;
-            velocityY = 0;
-            onGround = true;
-        }
-
-        if (time - lastSpawnTime >= spawnDelay) {
-            spawnLava();
-            lastSpawnTime = time;
-        }
-
-        for (let i = lavaCubes.length - 1; i >= 0; i--) {
-            const lava = lavaCubes[i];
-            lava.position.y -= GRAVITY;
-
-            if (lavaCollision(lava)) {
-                gameOver();
-                break;
-            }
-
-            if (lava.position.y < -5) {
-                scene.remove(lava);
-                lavaCubes.splice(i, 1);
-            }
-        }
-
-        player.position.x = Math.max(
-            WORLD_MIN_X,
-            Math.min(WORLD_MAX_X, player.position.x)
-        );
-
-        const targetX = player.position.x / 2;
-        camera.position.x += (targetX - camera.position.x) * (1 - settings.cameraSmoothness);
-
-        elapsedTime = ((time - gameStartTime) / 1000).toFixed(1);
-        timer.textContent = "Timer: " + elapsedTime;
+    if ((keys["w"] || keys[" "] || keys["arrowup"]) && onGround) {
+      velocityY = jumpForce;
+      onGround = false;
     }
 
-    requestAnimationFrame(loop);
+    velocityY -= GRAVITY / 9;
+    player.position.y += velocityY;
+
+    if (player.position.y <= 1.3) {
+      player.position.y = 1.3;
+      velocityY = 0;
+      onGround = true;
+    }
+
+    if (time - lastSpawnTime >= spawnDelay) {
+      spawnRain();
+      lastSpawnTime = time;
+    }
+
+    for (let i = rain.length - 1; i >= 0; i--) {
+      const r = rain[i];
+      r.mesh.position.y -= GRAVITY;
+
+      if (r.type === "lava") {
+        if (collision(r.mesh)) {
+          gameOver();
+          break;
+        }
+      }
+
+      if (r.type === "cat") {
+        r.mesh.rotation.x += 0.05;
+        r.mesh.rotation.y += 0.05;
+        r.mesh.rotation.z += 0.05;
+
+        if (collision(r.mesh)) {
+          sounds.cat.play();
+
+          catsCollected++;
+          catBoosts.push(performance.now() + CAT_BOOST_DURATION);
+
+          scene.remove(r.mesh);
+          rain.splice(i, 1);
+          continue;
+        }
+      }
+
+      if (r.mesh.position.y < -5) {
+        scene.remove(r.mesh);
+        rain.splice(i, 1);
+      }
+    }
+
+    player.position.x = Math.max(
+      WORLD_MIN_X,
+      Math.min(WORLD_MAX_X, player.position.x)
+    );
+
+    const targetX = player.position.x / 2;
+    camera.position.x +=
+      (targetX - camera.position.x) * (1 - settings.cameraSmoothness);
+
+    elapsedTime = ((time - gameStartTime) / 1000).toFixed(1);
+    stats.innerHTML = `
+      Timer: ${elapsedTime}<br>
+      Rain spawning: ${(spawnDelay / 1000).toFixed(2)}s<br>
+      Cats collected: ${catsCollected}
+    `;
+  }
+
+  requestAnimationFrame(loop);
 }
 
 loop();
 
 function gameOver() {
-    playing = false;
-    setPaused(false);
+  playing = false;
+  setPaused(false);
 
-    updateGUI();
-    gameoverDialog.show();
-    sounds.scream.play();
+  updateGUI();
+  gameoverDialog.show();
+  sounds.scream.play();
 }
 
 function resetGame() {
-    lavaCubes.forEach(l => scene.remove(l));
-    lavaCubes.length = 0;
+  rain.forEach((l) => scene.remove(l.mesh));
+  rain.length = 0;
 
-    player.position.set(0, 1.3, 0);
-    velocityY = 0;
-    spawnDelay = 1200;
+  player.position.set(0, 1.3, 0);
+  camera.position.set(0, 5, 10);
 
-    camera.position.set(0, 5, 10);
+  velocityY = 0;
+  spawnDelay = 1200;
+  catBoosts.length = 0;
+  speedMultiplier = 1;
+  catsCollected = 0;
 }
 
 function startGame() {
-    playing = true;
-    setPaused(false);
+  playing = true;
+  setPaused(false);
 
-    resetGame();
-    lastSpawnTime = performance.now();
-    gameStartTime = performance.now();
-    elapsedTime = 0;
+  resetGame();
+  lastSpawnTime = performance.now();
+  gameStartTime = performance.now();
+  elapsedTime = 0;
 
-    sounds.ddededodediamante.play();
-    updateGUI();
+  sounds.ddededodediamante.play();
+  updateGUI();
 }
 
 let wasPaused = false;
 window.addEventListener("blur", () => {
-    if (playing) {
-        wasPaused = paused;
-        setPaused(true);
-        updateGUI();
-    }
+  if (playing) {
+    wasPaused = paused;
+    setPaused(true);
+    updateGUI();
+  }
 });
 
 window.addEventListener("focus", () => {
-    if (playing) {
-        setPaused(wasPaused);
-        updateGUI();
-    }
+  if (playing) {
+    setPaused(wasPaused);
+    updateGUI();
+  }
 });
 
 let pauseStartTime = 0;
 function setPaused(value) {
-    if (paused === value) return;
+  if (paused === value) return;
 
-    paused = value;
+  paused = value;
 
-    if (paused) {
-        pauseStartTime = performance.now();
-    } else {
-        const pausedDuration = performance.now() - pauseStartTime;
-        lastSpawnTime += pausedDuration;
-        gameStartTime += pausedDuration;
-    }
+  if (paused) {
+    pauseStartTime = performance.now();
+  } else {
+    const pausedDuration = performance.now() - pauseStartTime;
+    lastSpawnTime += pausedDuration;
+    gameStartTime += pausedDuration;
+  }
 
-    updateGUI();
+  updateGUI();
 }
 
 function updateGUI() {
-    if (playing) {
-        gui.style.display = null;
-        pauseButton.innerHTML = `<img src="/${paused ? "resume" : "pause"}.svg">`;
-    } else {
-        gui.style.display = "none";
-    }
+  if (playing) {
+    gui.style.display = null;
+    pauseButton.innerHTML = `<img src="/${paused ? "resume" : "pause"}.svg">`;
+  } else {
+    gui.style.display = "none";
+  }
 }
 
 pauseButton.addEventListener("click", () => {
-    if (!playing) return;
-    setPaused(!paused);
-    updateGUI();
+  if (!playing) return;
+  setPaused(!paused);
+  updateGUI();
 });
 
 function createDialog(id, { show = false, buttons = {} } = {}) {
-    const dialog = document.querySelector(`dialog#${id}`);
+  const dialog = document.querySelector(`dialog#${id}`);
 
-    if (show) dialog.style.display = "flex";
+  if (show) dialog.style.display = "flex";
 
-    for (const selector in buttons) {
-        const btn = dialog.querySelector(selector);
-        if (!btn) continue;
-        btn.addEventListener("click", buttons[selector]);
-    }
+  for (const selector in buttons) {
+    const btn = dialog.querySelector(selector);
+    if (!btn) continue;
+    btn.addEventListener("click", buttons[selector]);
+  }
 
-    return {
-        show() { dialog.style.display = "flex"; },
-        hide() { dialog.style.display = "none"; },
-        element: dialog
-    };
+  return {
+    show() {
+      dialog.style.display = "flex";
+    },
+    hide() {
+      dialog.style.display = "none";
+    },
+    element: dialog,
+  };
 }
 
 const startDialog = createDialog("start", {
-    show: true,
-    buttons: {
-        "button#start": () => {
-            startDialog.hide();
-            startGame();
-        },
-        "button#settings": () => {
-            startDialog.hide();
-            settingsDialog.show();
-        }
-    }
+  show: true,
+  buttons: {
+    "button#start": () => {
+      startDialog.hide();
+      startGame();
+    },
+    "button#settings": () => {
+      startDialog.hide();
+      settingsDialog.show();
+    },
+  },
 });
 
 const gameoverDialog = createDialog("gameover", {
-    buttons: {
-        "button#restart": () => {
-            gameoverDialog.hide();
-            startGame();
-        },
-        "button#menu": () => {
-            gameoverDialog.hide();
-            startDialog.show();
-        }
-    }
+  buttons: {
+    "button#restart": () => {
+      gameoverDialog.hide();
+      startGame();
+    },
+    "button#menu": () => {
+      gameoverDialog.hide();
+      startDialog.show();
+    },
+  },
 });
 
 const settingsDialog = createDialog("settings", {
-    show: false,
-    buttons: {
-        "button#back": () => {
-            startDialog.show();
-            settingsDialog.hide();
-            saveSettings();
-        }
-    }
+  show: false,
+  buttons: {
+    "button#back": () => {
+      startDialog.show();
+      settingsDialog.hide();
+      saveSettings();
+    },
+  },
 });
 
-const cameraSmoothnessInput = settingsDialog.element.querySelector("#camerasmoothness");
+const cameraSmoothnessInput =
+  settingsDialog.element.querySelector("#camerasmoothness");
 cameraSmoothnessInput.value = settings.cameraSmoothness;
-cameraSmoothnessInput.addEventListener("input", e => {
-    settings.cameraSmoothness = parseFloat(e.target.value);
-    saveSettings();
+cameraSmoothnessInput.addEventListener("input", (e) => {
+  settings.cameraSmoothness = parseFloat(e.target.value);
+  saveSettings();
 });
 
 const hasTouch =
-    window.matchMedia("(pointer: coarse)").matches ||
-    navigator.maxTouchPoints > 0;
+  window.matchMedia("(pointer: coarse)").matches ||
+  navigator.maxTouchPoints > 0;
 if (hasTouch) {
-    const mobileControls = document.getElementById("mobilecontrols")
-    mobileControls.style.display = "flex";
+  const mobileControls = document.getElementById("mobilecontrols");
+  mobileControls.style.display = "flex";
 
-    function bindButton(button, key) {
-        button.addEventListener("touchstart", e => {
-            e.preventDefault();
-            keys[key] = true;
-        });
-        button.addEventListener("touchend", e => {
-            e.preventDefault();
-            keys[key] = false;
-        });
-        button.addEventListener("touchcancel", () => {
-            keys[key] = false;
-        });
-    }
+  function bindButton(button, key) {
+    button.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      keys[key] = true;
+    });
+    button.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      keys[key] = false;
+    });
+    button.addEventListener("touchcancel", () => {
+      keys[key] = false;
+    });
+  }
 
-    bindButton(mobileControls.querySelector("#left"), "a");
-    bindButton(mobileControls.querySelector("#right"), "d");
-    bindButton(mobileControls.querySelector("#up"), "w");
+  bindButton(mobileControls.querySelector("#left"), "a");
+  bindButton(mobileControls.querySelector("#right"), "d");
+  bindButton(mobileControls.querySelector("#up"), "w");
 }
