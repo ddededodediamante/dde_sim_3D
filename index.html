@@ -11,10 +11,10 @@
 <body>
   <dialog id="start">
     <h2>ddededodediamante Simulator 3D</h2>
-<div class="inline">
-  <button id="start">Start</button>
-  <button id="settings">Settings</button>
-</div>
+    <div class="inline">
+      <button id="start">Start</button>
+      <button id="settings">Settings</button>
+    </div>
 
     <details>
       <summary>
@@ -37,20 +37,30 @@
 
   <dialog id="settings">
     <h2>Settings</h2>
-  
+
     <div class="inline">
       <label>Camera Smoothness</label>
       <input type="range" min="0" max="0.9" step="0.05" id="camerasmoothness">
     </div>
-  
+
     <button id="back">Go back</button>
   </dialog>
 
-  <div class="gui">
-    <button id="pause" style="display: none"></button>
-  </div>
-
   <div id="app">
+    <div id="gui" style="display: none">
+      <button id="pause"></button>
+      <p id="timer">Timer: 0</p>
+    </div>
+
+    <div id="mobilecontrols" style="display: none">
+      <div class="inline">
+        <button id="left"><img src="/left.svg"></button>
+        <button id="right"><img src="/right.svg"></button>
+      </div>
+      <div class="inline"></div>
+      <button id="up"><img src="/up.svg"></button>
+    </div>
+
     <canvas id="game"></canvas>
   </div>
 

@@ -12,7 +12,8 @@ const sounds = {
 };
 
 let settings = {
-    cameraSmoothness: 0.1
+    cameraSmoothness: 0.1,
+    forceMobileControls: false
 };
 
 function loadSettings() {
@@ -36,7 +37,9 @@ sounds.music.play().catch(() => {
 });
 
 const canvas = document.getElementById("game");
-const pauseButton = document.getElementById("pause");
+const gui = document.querySelector("div#gui")
+const pauseButton = gui.querySelector("#pause");
+const timer = gui.querySelector("#timer");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -112,6 +115,8 @@ let velocityY = 0;
 let onGround = false;
 let playing = false;
 let paused = false;
+let gameStartTime = 0;
+let elapsedTime = 0;
 
 const lavaCubes = [];
 const lavaGeometry = new THREE.BoxGeometry(0.7, 0.7, 0.7);
@@ -190,6 +195,9 @@ function loop(time) {
 
         const targetX = player.position.x / 2;
         camera.position.x += (targetX - camera.position.x) * (1 - settings.cameraSmoothness);
+
+        elapsedTime = ((time - gameStartTime) / 1000).toFixed(1);
+        timer.textContent = "Timer: " + elapsedTime;
     }
 
     requestAnimationFrame(loop);
@@ -201,7 +209,7 @@ function gameOver() {
     playing = false;
     setPaused(false);
 
-    updatePauseButton();
+    updateGUI();
     gameoverDialog.show();
     sounds.scream.play();
 }
@@ -223,9 +231,11 @@ function startGame() {
 
     resetGame();
     lastSpawnTime = performance.now();
+    gameStartTime = performance.now();
+    elapsedTime = 0;
 
     sounds.ddededodediamante.play();
-    updatePauseButton();
+    updateGUI();
 }
 
 let wasPaused = false;
@@ -233,14 +243,14 @@ window.addEventListener("blur", () => {
     if (playing) {
         wasPaused = paused;
         setPaused(true);
-        updatePauseButton();
+        updateGUI();
     }
 });
 
 window.addEventListener("focus", () => {
     if (playing) {
         setPaused(wasPaused);
-        updatePauseButton();
+        updateGUI();
     }
 });
 
@@ -255,20 +265,25 @@ function setPaused(value) {
     } else {
         const pausedDuration = performance.now() - pauseStartTime;
         lastSpawnTime += pausedDuration;
+        gameStartTime += pausedDuration;
     }
 
-    updatePauseButton();
+    updateGUI();
 }
 
-function updatePauseButton() {
-    pauseButton.style.display = playing ? "block" : "none";
-    pauseButton.innerHTML = `<img src="/${paused ? "resume" : "pause"}.svg">`;
+function updateGUI() {
+    if (playing) {
+        gui.style.display = null;
+        pauseButton.innerHTML = `<img src="/${paused ? "resume" : "pause"}.svg">`;
+    } else {
+        gui.style.display = "none";
+    }
 }
 
 pauseButton.addEventListener("click", () => {
     if (!playing) return;
     setPaused(!paused);
-    updatePauseButton();
+    updateGUI();
 });
 
 function createDialog(id, { show = false, buttons = {} } = {}) {
@@ -333,3 +348,29 @@ cameraSmoothnessInput.addEventListener("input", e => {
     settings.cameraSmoothness = parseFloat(e.target.value);
     saveSettings();
 });
+
+const hasTouch =
+    window.matchMedia("(pointer: coarse)").matches ||
+    navigator.maxTouchPoints > 0;
+if (hasTouch) {
+    const mobileControls = document.getElementById("mobilecontrols")
+    mobileControls.style.display = "flex";
+
+    function bindButton(button, key) {
+        button.addEventListener("touchstart", e => {
+            e.preventDefault();
+            keys[key] = true;
+        });
+        button.addEventListener("touchend", e => {
+            e.preventDefault();
+            keys[key] = false;
+        });
+        button.addEventListener("touchcancel", () => {
+            keys[key] = false;
+        });
+    }
+
+    bindButton(mobileControls.querySelector("#left"), "a");
+    bindButton(mobileControls.querySelector("#right"), "d");
+    bindButton(mobileControls.querySelector("#up"), "w");
+}
