@@ -30,6 +30,7 @@
     <div class="inline">
       <button id="start">Start</button>
       <button id="settings">Settings</button>
+      <button id="tutorial">Tutorial</button>
     </div>
 
     <details>
@@ -45,6 +46,8 @@
   <dialog id="gameover">
     <h2>Game Over!</h2>
 
+    <p id="stats">You survived for 0 seconds and collected 0 cats.</p>
+
     <div class="inline">
       <button id="restart">Restart</button>
       <button id="menu">Menu</button>
@@ -59,7 +62,37 @@
       <input type="range" min="0" max="0.9" step="0.05" id="camerasmoothness">
     </div>
 
+    <div class="inline">
+      <label>Music</label>
+      <input type="checkbox" id="musicenable">
+    </div>
+
+    <div class="inline">
+      <label>SFX</label>
+      <input type="checkbox" id="sfxenable">
+    </div>
+
     <button id="back">Go back</button>
+  </dialog>
+
+  <dialog id="tutorial">
+    <h2>Tutorial</h2>
+  
+    <p>
+      Move with <b>A / D</b> or <b>Arrow keys</b><br>
+      Jump with <b>W</b>, <b>↑</b> or <b>Space</b>
+    </p>
+  
+    <p>
+      <b>Red cubes</b> = instant death.<br>
+      <b>Cats</b> = 8 seconds speed boost (stackable)
+    </p>
+  
+    <p>
+      Survive as long as possible and collect cats!
+    </p>
+  
+    <button id="back">Got it!</button>
   </dialog>
 
   <div id="app">

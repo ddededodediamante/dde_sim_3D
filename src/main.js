@@ -17,7 +17,8 @@ const sounds = {
 
 let settings = {
   cameraSmoothness: 0.1,
-  forceMobileControls: false,
+  musicEnabled: true,
+  sfxEnabled: true,
 };
 
 function loadSettings() {
@@ -32,22 +33,49 @@ function saveSettings() {
   localStorage.setItem("settings", JSON.stringify(settings));
 }
 
+let bestTime = parseFloat(localStorage.getItem("bestTime")) || 0;
+function saveBestTime(time = bestTime) {
+  bestTime = time;
+  localStorage.setItem("bestTime", time);
+}
+
+function playMusic(audio) {
+  if (!settings.musicEnabled) return;
+  audio.play().catch(() => { });
+}
+
+function playSFX(audio) {
+  if (!settings.sfxEnabled) return;
+  audio.currentTime = 0;
+  audio.play().catch(() => { });
+}
+
 sounds.music.loop = true;
 
-sounds.music.play().catch(() => {
-  document.addEventListener(
-    "click",
-    () => {
-      sounds.music.play();
-    },
-    { once: true }
-  );
-});
+function updateMusicState() {
+  if (settings.musicEnabled) {
+    playMusic(sounds.music);
+  } else {
+    sounds.music.pause();
+  }
+}
+
+updateMusicState();
+
+document.addEventListener(
+  "click",
+  () => {
+    updateMusicState();
+  },
+  { once: true }
+);
 
 const canvas = document.getElementById("game");
 const gui = document.querySelector("div#gui");
 const pauseButton = gui.querySelector("#pause");
 const stats = gui.querySelector("#stats");
+const gameoverStats =
+  document.querySelector("#gameover p#stats");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
@@ -177,7 +205,13 @@ function collision(mesh) {
   return dx < 0.7 && dy < 1.3;
 }
 
+let lastTime = 0;
 function loop(time) {
+  const delta = lastTime ? (time - lastTime) / 1000 : 0;
+  lastTime = time;
+
+  const frameScale = delta * 60;
+
   if (assetsLoaded) renderer.render(scene, camera);
 
   if (playing && !paused) {
@@ -185,18 +219,18 @@ function loop(time) {
     speedMultiplier = 1 + catBoosts.length * CAT_BOOST_AMOUNT;
 
     if (keys["a"] || keys["arrowleft"])
-      player.position.x -= moveSpeed * speedMultiplier;
+      player.position.x -= moveSpeed * speedMultiplier * frameScale;
 
     if (keys["d"] || keys["arrowright"])
-      player.position.x += moveSpeed * speedMultiplier;
+      player.position.x += moveSpeed * speedMultiplier * frameScale;
 
     if ((keys["w"] || keys[" "] || keys["arrowup"]) && onGround) {
       velocityY = jumpForce;
       onGround = false;
     }
 
-    velocityY -= GRAVITY / 9;
-    player.position.y += velocityY;
+    velocityY -= (GRAVITY / 9) * frameScale;
+    player.position.y += velocityY * frameScale;
 
     if (player.position.y <= 1.3) {
       player.position.y = 1.3;
@@ -211,7 +245,7 @@ function loop(time) {
 
     for (let i = rain.length - 1; i >= 0; i--) {
       const r = rain[i];
-      r.mesh.position.y -= GRAVITY;
+      r.mesh.position.y -= GRAVITY * frameScale;
 
       if (r.type === "lava") {
         if (collision(r.mesh)) {
@@ -221,12 +255,12 @@ function loop(time) {
       }
 
       if (r.type === "cat") {
-        r.mesh.rotation.x += 0.05;
-        r.mesh.rotation.y += 0.05;
-        r.mesh.rotation.z += 0.05;
+        r.mesh.rotation.x += 0.05 * frameScale;
+        r.mesh.rotation.y += 0.05 * frameScale;
+        r.mesh.rotation.z += 0.05 * frameScale;
 
         if (collision(r.mesh)) {
-          sounds.cat.play();
+          playSFX(sounds.cat);
 
           catsCollected++;
           catBoosts.push(performance.now() + CAT_BOOST_DURATION);
@@ -249,8 +283,8 @@ function loop(time) {
     );
 
     const targetX = player.position.x / 2;
-    camera.position.x +=
-      (targetX - camera.position.x) * (1 - settings.cameraSmoothness);
+    const smooth = 1 - Math.pow(settings.cameraSmoothness, frameScale);
+    camera.position.x += (targetX - camera.position.x) * smooth;
 
     elapsedTime = ((time - gameStartTime) / 1000).toFixed(1);
     stats.innerHTML = `
@@ -269,9 +303,24 @@ function gameOver() {
   playing = false;
   setPaused(false);
 
+  const survivedSeconds =
+    ((performance.now() - gameStartTime) / 1000).toFixed(1);
+
+  let newRecord = survivedSeconds > bestTime;
+  if (newRecord) {
+    saveBestTime(survivedSeconds);
+  }
+
+  gameoverStats.innerHTML = `
+    You survived for <b>${survivedSeconds}</b> seconds
+    and collected <b>${catsCollected}</b> cats.
+    <br><br>
+    <b>${newRecord ? "New record!" : `Your highscore: ${bestTime}s`}</b>
+  `;
+
   updateGUI();
   gameoverDialog.show();
-  sounds.scream.play();
+  playSFX(sounds.scream);
 }
 
 function resetGame() {
@@ -297,7 +346,7 @@ function startGame() {
   gameStartTime = performance.now();
   elapsedTime = 0;
 
-  sounds.ddededodediamante.play();
+  playSFX(sounds.ddededodediamante);
   updateGUI();
 }
 
@@ -371,6 +420,16 @@ function createDialog(id, { show = false, buttons = {} } = {}) {
   };
 }
 
+const tutorialDialog = createDialog("tutorial", {
+  show: false,
+  buttons: {
+    "button#back": () => {
+      startDialog.show();
+      tutorialDialog.hide();
+    },
+  },
+});
+
 const startDialog = createDialog("start", {
   show: true,
   buttons: {
@@ -381,6 +440,10 @@ const startDialog = createDialog("start", {
     "button#settings": () => {
       startDialog.hide();
       settingsDialog.show();
+    },
+    "button#tutorial": () => {
+      startDialog.hide();
+      tutorialDialog.show()
     },
   },
 });
@@ -414,6 +477,24 @@ const cameraSmoothnessInput =
 cameraSmoothnessInput.value = settings.cameraSmoothness;
 cameraSmoothnessInput.addEventListener("input", (e) => {
   settings.cameraSmoothness = parseFloat(e.target.value);
+  saveSettings();
+});
+
+const musicEnableInput =
+  settingsDialog.element.querySelector("#musicenable");
+musicEnableInput.checked = settings.musicEnabled;
+const sfxEnableInput =
+  settingsDialog.element.querySelector("#sfxenable");
+sfxEnableInput.checked = settings.sfxEnabled;
+
+musicEnableInput.addEventListener("change", (e) => {
+  settings.musicEnabled = e.target.checked;
+  updateMusicState();
+  saveSettings();
+});
+
+sfxEnableInput.addEventListener("change", (e) => {
+  settings.sfxEnabled = e.target.checked;
   saveSettings();
 });
 
