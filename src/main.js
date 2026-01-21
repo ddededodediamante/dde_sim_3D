@@ -3,10 +3,13 @@ import * as THREE from "three";
 
 const WORLD_MIN_X = -8;
 const WORLD_MAX_X = 8;
-const GRAVITY = 0.17;
-const CAT_CHANCE = 0.1;
-const CAT_BOOST_DURATION = 8000;
-const CAT_BOOST_AMOUNT = 0.2;
+let GRAVITY = 0.17;
+let CAT_CHANCE = 0.1;
+let CAT_BOOST_DURATION = 8000;
+let CAT_BOOST_AMOUNT = 0.2;
+let PLAYER_SPEED = 0.12;
+let PLAYER_JUMP = 0.31;
+let RAIN_DELAY_DEFAULT = 1200;
 
 const sounds = {
   ddededodediamante: new Audio("/ddededodediamante.wav"),
@@ -144,8 +147,7 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-const moveSpeed = 0.12;
-const jumpForce = 0.31;
+let currentMode = "normal";
 
 let catBoosts = [];
 let speedMultiplier = 1;
@@ -169,7 +171,7 @@ const catMaterial = new THREE.MeshStandardMaterial({
   transparent: true,
 });
 
-let spawnDelay = 1200;
+let spawnDelay = RAIN_DELAY_DEFAULT;
 let lastSpawnTime = 0;
 const spawnSpeedMultiplier = 0.985;
 const minSpawnDelay = 150;
@@ -219,13 +221,13 @@ function loop(time) {
     speedMultiplier = 1 + catBoosts.length * CAT_BOOST_AMOUNT;
 
     if (keys["a"] || keys["arrowleft"])
-      player.position.x -= moveSpeed * speedMultiplier * frameScale;
+      player.position.x -= PLAYER_SPEED * speedMultiplier * frameScale;
 
     if (keys["d"] || keys["arrowright"])
-      player.position.x += moveSpeed * speedMultiplier * frameScale;
+      player.position.x += PLAYER_SPEED * speedMultiplier * frameScale;
 
     if ((keys["w"] || keys[" "] || keys["arrowup"]) && onGround) {
-      velocityY = jumpForce;
+      velocityY = PLAYER_JUMP;
       onGround = false;
     }
 
@@ -315,6 +317,8 @@ function gameOver() {
     You survived for <b>${survivedSeconds}</b> seconds
     and collected <b>${catsCollected}</b> cats.
     <br><br>
+    <b>Mode: ${currentMode}</b>
+    <br>
     <b>${newRecord ? "New record!" : `Your highscore: ${bestTime}s`}</b>
   `;
 
@@ -331,13 +335,15 @@ function resetGame() {
   camera.position.set(0, 5, 10);
 
   velocityY = 0;
-  spawnDelay = 1200;
+  spawnDelay = RAIN_DELAY_DEFAULT;
   catBoosts.length = 0;
   speedMultiplier = 1;
   catsCollected = 0;
 }
 
 function startGame() {
+  applyMode(currentMode);
+
   playing = true;
   setPaused(false);
 
@@ -435,7 +441,7 @@ const startDialog = createDialog("start", {
   buttons: {
     "button#start": () => {
       startDialog.hide();
-      startGame();
+      modesDialog.show();
     },
     "button#settings": () => {
       startDialog.hide();
@@ -444,6 +450,19 @@ const startDialog = createDialog("start", {
     "button#tutorial": () => {
       startDialog.hide();
       tutorialDialog.show()
+    },
+  },
+});
+
+const modesDialog = createDialog("modes", {
+  buttons: {
+    "button#start": () => {
+      modesDialog.hide();
+      startGame();
+    },
+    "button#back": () => {
+      modesDialog.hide();
+      startDialog.show();
     },
   },
 });
@@ -522,4 +541,52 @@ if (hasTouch) {
   bindButton(mobileControls.querySelector("#left"), "a");
   bindButton(mobileControls.querySelector("#right"), "d");
   bindButton(mobileControls.querySelector("#up"), "w");
+}
+
+document.getElementById("selectmodemenu").addEventListener("change", (e) => {
+  currentMode = e.target.value;
+});
+
+function applyMode(mode) {
+  GRAVITY = 0.17;
+  CAT_CHANCE = 0.1;
+  CAT_BOOST_DURATION = 8000;
+  CAT_BOOST_AMOUNT = 0.2;
+  PLAYER_SPEED = 0.12;
+  PLAYER_JUMP = 0.31;
+  RAIN_DELAY_DEFAULT = 1200;
+
+  let oldMusicSrc = '/' + sounds.music.src.split('/').at(-1);
+  let newMusicSrc = "/newfriendly.mp3";
+
+  switch (mode) {
+    case "fast":
+      GRAVITY = 0.17 * 1.5;
+      PLAYER_SPEED = 0.12 * 1.5;
+      RAIN_DELAY_DEFAULT = 900;
+
+      scene.background = new THREE.Color(0xfc9d03);
+      newMusicSrc = "/action.mp3";
+      break;
+
+    case "no cats":
+      CAT_CHANCE = 0;
+
+      scene.background = new THREE.Color(0x87ceeb);
+      newMusicSrc = "/newfriendly.mp3";
+      break;
+
+    case "normal":
+    default:
+      scene.background = new THREE.Color(0x87ceeb);
+      newMusicSrc = "/newfriendly.mp3";
+      break;
+  }
+
+  if (oldMusicSrc !== newMusicSrc) {
+    sounds.music.src = newMusicSrc;
+    sounds.music.pause();
+    sounds.music.currentTime = 0;
+    updateMusicState();
+  }
 }
